@@ -51,21 +51,6 @@ class Booking(models.Model):
 
         return references
 
-    def authorize_payment_at_creation(self, card_token: str):
-        ...
-
-    def send_email_about_failure(self, reason: str) -> None:
-        ...
-
-    def cancel_payment(self):
-        ...
-
-    def capture_payment(self):
-        ...
-
-    def sync_with_crm(self):
-        ...
-
 
 class Prebooking(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
