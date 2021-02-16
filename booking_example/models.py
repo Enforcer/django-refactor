@@ -52,16 +52,19 @@ class Booking(models.Model):
         return references
 
     def authorize_payment_at_creation(self, card_token: str):
-        pass
+        ...
 
     def send_email_about_failure(self, reason: str) -> None:
         ...
 
     def cancel_payment(self):
-        pass
+        ...
 
     def capture_payment(self):
-        pass
+        ...
+
+    def sync_with_crm(self):
+        ...
 
 
 class Prebooking(models.Model):
