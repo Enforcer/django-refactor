@@ -4,7 +4,7 @@ from djmoney.contrib.django_rest_framework import MoneyField
 from rest_framework.exceptions import ValidationError
 from rest_framework.fields import CharField
 from rest_framework.relations import PrimaryKeyRelatedField
-from rest_framework.serializers import HyperlinkedModelSerializer
+from rest_framework.serializers import ModelSerializer
 
 from booking_example.commands import FinishBookingCommand
 from booking_example.models import (
@@ -18,7 +18,7 @@ import madeup_payment
 import old_payment
 
 
-class BookingSerializer(HyperlinkedModelSerializer):
+class BookingSerializer(ModelSerializer):
 
     amusement_park_prebookings = PrimaryKeyRelatedField(
         many=True,
