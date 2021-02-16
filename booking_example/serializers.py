@@ -1,3 +1,5 @@
+import itertools
+
 import waffle
 from django.db import transaction
 from djmoney.contrib.django_rest_framework import MoneyField
@@ -6,16 +8,17 @@ from rest_framework.fields import CharField
 from rest_framework.relations import PrimaryKeyRelatedField
 from rest_framework.serializers import ModelSerializer
 
-from booking_example.commands import FinishBookingCommand
+import madeup_booking
+from booking_example import crm, emails
 from booking_example.models import (
     Booking,
     AmusementParkPreBooking,
     MuseumPreBooking,
     RestaurantPreBooking,
 )
-from madeup_booking import MadeUpApiProviderError
 import madeup_payment
 import old_payment
+from booking_example.payments import NewPayments, OldPayments, AuthorizationFailed
 
 
 class BookingSerializer(ModelSerializer):
@@ -54,69 +57,51 @@ class BookingSerializer(ModelSerializer):
         return data
 
     def create(self, validated_data) -> Booking:
+        if waffle.switch_is_active('use_new_payment'):
+            payments = NewPayments()
+        else:
+            payments = OldPayments()
+
         # in original source code, that method had 100+ LoC
         payment_card_token = validated_data.pop('payment_card_token')
         booking: Booking = super().create(validated_data)
 
-        if not self.validate_payment_card_with_zero_auth(payment_card_token):
+        try:
+            payments.perform_zero_auth(payment_card_token)
+        except AuthorizationFailed:
             booking.fail_payment()
+            booking.save()
             return booking
 
-        if booking.pay_now_total.amount:
-            with transaction.atomic():
-                booking.authorize_payment_at_creation(
-                    card_token=payment_card_token
-                )
-                if booking.status == booking.Status.FAILED_PAYMENT:
-                    transaction.on_commit(
-                        lambda: booking.send_email_about_failure('payment failed')
-                    )
-                    return booking
-
-        return self.finish_booking(booking)
-
-    @staticmethod
-    def finish_booking(booking: Booking) -> Booking:
-        command = FinishBookingCommand()
-        try:
-            command.finish_booking(booking)
-        except MadeUpApiProviderError:
-            if booking.pay_now_total.amount:
-                booking.cancel_payment()
-            booking.send_email_about_failure('booking failed')
-
-        if booking.pay_now_total.amount:
-            booking.capture_payment()
-
-        booking.sync_with_crm()
-
-        return booking
-
-    def validate_payment_card_with_zero_auth(
-        self, payment_card_token: str
-    ) -> bool:
-        if waffle.switch_is_active('use_new_payment'):
+        if booking.needs_pay_anything_now:
             try:
-                madeup_payment.Charge.create(
-                    amount=0,
-                    currency='USD',
-                    description='card validation',
-                    capture=False,
-                    source=payment_card_token
+                auth_handle = payments.authorize(
+                    payment_card_token, booking.pay_now_total
                 )
-            except madeup_payment.PaymentFailed:
-                return False
+            except AuthorizationFailed:
+                booking.fail_payment()
+                booking.save()
+                emails.send_information_about_failure(booking)
+                return booking
 
-            return True
+        madeup_client = madeup_booking.BookingClient()
+        references = booking.get_prebookings_references()
+        try:
+            booking_api_response = madeup_client.book_at_once(references)
+        except madeup_booking.MadeUpApiProviderError:
+            if booking.needs_pay_anything_now:
+                payments.release(auth_handle)
+
+            emails.send_information_about_failure(booking)
         else:
-            client = old_payment.Client()
-            response = client.authorize(
-                amount=0, currency='USD', token=payment_card_token
-            )
-            if response.status == old_payment.Status.SUCCESS:
-                return True
-            else:
-                return False
+            booking.reference = booking_api_response['ReferenceNumber']
+            if booking.needs_pay_anything_now:
+                payments.capture(auth_handle)
+
+            crm.sync_booking(booking)
+
+        booking.save()
+        return booking
 
     class Meta:
         model = Booking

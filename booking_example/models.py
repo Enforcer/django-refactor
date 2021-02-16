@@ -27,6 +27,10 @@ class Booking(models.Model):
         return Money(1, 'USD')
 
     @property
+    def needs_pay_anything_now(self):
+        return self.pay_now_total.amount
+
+    @property
     def total(self):
         all_prebookings = itertools.chain(
             self.amusement_park_prebookings.all(),
@@ -35,10 +39,19 @@ class Booking(models.Model):
         )
         return sum(prebooking.total for prebooking in all_prebookings)
 
-    def authorize_payment_at_creation(self, card_token: str):
-        pass
+    def get_prebookings_references(self):
+        all_prebookings = itertools.chain(
+            self.amusement_park_prebookings.all(),
+            self.restaurant_prebookings.all(),
+            self.museum_prebookings.all(),
+        )
+        references = []
+        for prebooking in all_prebookings:
+            references.append(prebooking.prebooking_ref)
 
-    def sync_with_crm(self):
+        return references
+
+    def authorize_payment_at_creation(self, card_token: str):
         pass
 
     def send_email_about_failure(self, reason: str) -> None:

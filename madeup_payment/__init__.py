@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Charge:
+    charge_id: str
     paid: bool
 
     @classmethod
@@ -14,13 +15,16 @@ class Charge:
         capture: bool,
         source: str,
     ) -> 'Charge':
-        return Charge(paid=True)
+        return Charge(charge_id='irrelevant', paid=True)
 
     @classmethod
-    def retrieve(cls, capture_id: str) -> 'Charge':
-        return Charge(paid=True)
+    def retrieve(cls, charge_id: str) -> 'Charge':
+        return Charge(charge_id=charge_id, paid=True)
 
     def capture(self) -> bool:
+        return True
+
+    def cancel_auth(self) -> bool:
         return True
 
 
